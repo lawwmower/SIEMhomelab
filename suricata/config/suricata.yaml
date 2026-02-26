@@ -1,0 +1,239 @@
+# ============================================================================
+# Suricata Configuration — IDS Mode
+# ============================================================================
+# Tailored for SIEM homelab: EVE JSON logging, AF_PACKET capture, Community ID
+# ============================================================================
+
+%YAML 1.1
+---
+
+# Global settings
+vars:
+  address-groups:
+    HOME_NET: "[192.168.0.0/16,10.0.0.0/8,172.16.0.0/12]"
+    EXTERNAL_NET: "!$HOME_NET"
+    HTTP_SERVERS: "$HOME_NET"
+    SMTP_SERVERS: "$HOME_NET"
+    SQL_SERVERS: "$HOME_NET"
+    DNS_SERVERS: "$HOME_NET"
+    TELNET_SERVERS: "$HOME_NET"
+    AIM_SERVERS: "$EXTERNAL_NET"
+    DC_SERVERS: "$HOME_NET"
+    DNP3_SERVER: "$HOME_NET"
+    DNP3_CLIENT: "$HOME_NET"
+    MODBUS_CLIENT: "$HOME_NET"
+    MODBUS_SERVER: "$HOME_NET"
+    ENIP_CLIENT: "$HOME_NET"
+    ENIP_SERVER: "$HOME_NET"
+  port-groups:
+    HTTP_PORTS: "80"
+    SHELLCODE_PORTS: "!80"
+    ORACLE_PORTS: 1521
+    SSH_PORTS: 22
+    DNP3_PORTS: 20000
+    MODBUS_PORTS: 502
+    FILE_DATA_PORTS: "[$HTTP_PORTS,110,143]"
+    FTP_PORTS: 21
+    GENEVE_PORTS: 6081
+    VXLAN_PORTS: 4789
+    TEREDO_PORTS: 3544
+
+# Default log directory
+default-log-dir: /var/log/suricata/
+
+# Logging outputs
+outputs:
+  # EVE JSON — primary output consumed by Wazuh
+  - eve-log:
+      enabled: yes
+      filetype: regular
+      filename: eve.json
+      pcap-file: false
+      community-id: true
+      community-id-seed: 0
+      types:
+        - alert:
+            payload: yes
+            payload-buffer-size: 4kb
+            payload-printable: yes
+            packet: yes
+            metadata: yes
+            tagged-packets: yes
+        - anomaly:
+            enabled: yes
+            types:
+              decode: yes
+              stream: yes
+              applayer: yes
+        - http:
+            extended: yes
+        - dns:
+            enabled: yes
+        - tls:
+            extended: yes
+        - files:
+            force-magic: no
+        - smtp:
+            extended: yes
+        - nfs
+        - smb
+        - tftp
+        - ikev2
+        - dcerpc
+        - krb5
+        - dhcp:
+            enabled: yes
+            extended: yes
+        - ssh
+        - mqtt
+        - stats:
+            totals: yes
+            threads: no
+            deltas: no
+        - flow
+
+  # Fast log (text-based, for quick debugging)
+  - fast:
+      enabled: yes
+      filename: fast.log
+      append: yes
+
+  # Stats log
+  - stats:
+      enabled: yes
+      filename: stats.log
+      append: yes
+      totals: yes
+      threads: no
+
+# Capture settings
+af-packet:
+  - interface: enp2s0
+    cluster-id: 99
+    cluster-type: cluster_flow
+    defrag: yes
+    use-mmap: yes
+    tpacket-v3: yes
+
+# App-layer protocol detection
+app-layer:
+  protocols:
+    rfb:
+      enabled: yes
+      detection-ports:
+        dp: 5900, 5901, 5902, 5903, 5904, 5905, 5906, 5907, 5908, 5909
+    mqtt:
+      enabled: yes
+    krb5:
+      enabled: yes
+    snmp:
+      enabled: yes
+    ikev2:
+      enabled: yes
+    tls:
+      enabled: yes
+      detection-ports:
+        dp: 443
+      ja3-fingerprints: auto
+    dcerpc:
+      enabled: yes
+    ftp:
+      enabled: yes
+    rdp:
+      enabled: yes
+    ssh:
+      enabled: yes
+    http2:
+      enabled: yes
+    smtp:
+      enabled: yes
+    imap:
+      enabled: detection-only
+    smb:
+      enabled: yes
+      detection-ports:
+        dp: 139, 445
+    nfs:
+      enabled: yes
+    tftp:
+      enabled: yes
+    dns:
+      enabled: yes
+      tcp:
+        enabled: yes
+        detection-ports:
+          dp: 53
+      udp:
+        enabled: yes
+        detection-ports:
+          dp: 53
+    http:
+      enabled: yes
+      libhtp:
+        default-config:
+          personality: IDS
+          request-body-limit: 100kb
+          response-body-limit: 100kb
+          request-body-minimal-inspect-size: 32kb
+          request-body-inspect-window: 4kb
+          response-body-minimal-inspect-size: 40kb
+          response-body-inspect-window: 16kb
+          double-decode-path: no
+          double-decode-query: no
+        server-config:
+
+    modbus:
+      enabled: yes
+      detection-ports:
+        dp: 502
+    dnp3:
+      enabled: yes
+      detection-ports:
+        dp: 20000
+    enip:
+      enabled: yes
+      detection-ports:
+        dp: 44818
+        sp: 44818
+    pgsql:
+      enabled: yes
+      detection-ports:
+        dp: 5432
+
+# Stream engine
+stream:
+  memcap: 256mb
+  checksum-validation: yes
+  inline: auto
+  reassembly:
+    memcap: 512mb
+    depth: 1mb
+    toserver-chunk-size: 2560
+    toclient-chunk-size: 2560
+    randomize-chunk-size: yes
+
+# Detection engine
+detect:
+  profile: medium
+  custom-values:
+    toclient-groups: 3
+    toserver-groups: 25
+  sgh-mpm-context: auto
+  inspection-recursion-limit: 3000
+  prefilter:
+    default: mpm
+  grouping:
+
+# Threading
+threading:
+  set-cpu-affinity: no
+  detect-thread-ratio: 1.0
+
+# Rule files
+default-rule-path: /var/lib/suricata/rules
+rule-files:
+  - suricata.rules
+
+# Classification and reference configs
+classification-file: /etc/suricata/classification.config
+reference-config-file: /etc/suricata/reference.config

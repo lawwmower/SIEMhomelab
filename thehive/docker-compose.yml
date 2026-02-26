@@ -1,0 +1,182 @@
+# ============================================================================
+# TheHive + MISP — Incident Response & Threat Intelligence
+# ============================================================================
+# TheHive: Case management & incident response
+# MISP:    Threat intelligence sharing platform
+# Cassandra + Elasticsearch back TheHive's storage
+# MySQL + Redis back MISP
+# ============================================================================
+
+services:
+  # ---------- Cassandra (TheHive backend) ----------
+  cassandra:
+    image: cassandra:4
+    container_name: cassandra
+    hostname: cassandra
+    restart: unless-stopped
+    environment:
+      - CASSANDRA_CLUSTER_NAME=thehive
+      - MAX_HEAP_SIZE=1G
+      - HEAP_NEWSIZE=256M
+    volumes:
+      - cassandra-data:/var/lib/cassandra
+    networks:
+      - siem-net
+    healthcheck:
+      test: [ "CMD-SHELL", "cqlsh -e 'describe cluster' || exit 1" ]
+      interval: 30s
+      timeout: 10s
+      retries: 10
+      start_period: 60s
+
+  # ---------- Elasticsearch (TheHive index backend) ----------
+  thehive-elasticsearch:
+    image: docker.elastic.co/elasticsearch/elasticsearch:7.17.24
+    container_name: thehive-elasticsearch
+    hostname: thehive-elasticsearch
+    restart: unless-stopped
+    environment:
+      - discovery.type=single-node
+      - xpack.security.enabled=false
+      - "ES_JAVA_OPTS=-Xms${ELASTIC_MEMORY:-1g} -Xmx${ELASTIC_MEMORY:-1g}"
+      - cluster.name=thehive
+      - http.host=0.0.0.0
+    ulimits:
+      memlock:
+        soft: -1
+        hard: -1
+      nofile:
+        soft: 65536
+        hard: 65536
+    volumes:
+      - thehive-es-data:/usr/share/elasticsearch/data
+    networks:
+      - siem-net
+    healthcheck:
+      test: [ "CMD-SHELL", "curl -sf http://localhost:9200/_cluster/health | grep -qE '\"status\":\"(green|yellow)\"'" ]
+      interval: 30s
+      timeout: 10s
+      retries: 10
+      start_period: 60s
+
+  # ---------- TheHive ----------
+  thehive:
+    image: strangebee/thehive:5
+    container_name: thehive
+    hostname: thehive
+    restart: unless-stopped
+    depends_on:
+      cassandra:
+        condition: service_healthy
+      thehive-elasticsearch:
+        condition: service_healthy
+    environment:
+      - JVM_OPTS=-Xms512m -Xmx512m
+    command:
+      - --secret
+      - "${THEHIVE_SECRET:-thehive-secret-key-change-me-2025}"
+      - --cql-hostnames
+      - cassandra
+      - --cql-port
+      - "9042"
+      - --index-backend
+      - elasticsearch
+      - --es-hostnames
+      - thehive-elasticsearch
+      - --es-port
+      - "9200"
+      - --no-config-cortex
+      - --no-config-misp
+    volumes:
+      - thehive-data:/opt/thp/thehive/data
+    ports:
+      - "9000:9000"
+    networks:
+      - siem-net
+    healthcheck:
+      test: [ "CMD-SHELL", "curl -sf http://localhost:9000/api/v1/status | grep -q ok || curl -sf http://localhost:9000/api/status | grep -q ok || exit 1" ]
+      interval: 30s
+      timeout: 10s
+      retries: 15
+      start_period: 120s
+
+  # ---------- MySQL (MISP backend) ----------
+  misp-db:
+    image: mysql:8.0
+    container_name: misp-db
+    hostname: misp-db
+    restart: unless-stopped
+    environment:
+      MYSQL_DATABASE: misp
+      MYSQL_USER: misp
+      MYSQL_PASSWORD: misp_db_password
+      MYSQL_ROOT_PASSWORD: misp_root_password
+    volumes:
+      - misp-db-data:/var/lib/mysql
+    networks:
+      - siem-net
+    healthcheck:
+      test: [ "CMD", "mysqladmin", "ping", "-h", "localhost", "-uroot", "-pmisp_root_password" ]
+      interval: 15s
+      timeout: 5s
+      retries: 10
+      start_period: 30s
+    command: --default-authentication-plugin=mysql_native_password
+
+  # ---------- Redis (MISP cache) ----------
+  misp-redis:
+    image: redis:7-alpine
+    container_name: misp-redis
+    hostname: misp-redis
+    restart: unless-stopped
+    networks:
+      - siem-net
+    healthcheck:
+      test: [ "CMD", "redis-cli", "ping" ]
+      interval: 10s
+      timeout: 3s
+      retries: 5
+
+  # ---------- MISP ----------
+  misp:
+    image: ghcr.io/misp/misp-docker/misp-core:latest
+    container_name: misp
+    hostname: misp
+    restart: unless-stopped
+    depends_on:
+      misp-db:
+        condition: service_healthy
+      misp-redis:
+        condition: service_healthy
+    environment:
+      - MYSQL_HOST=misp-db
+      - MYSQL_PORT=3306
+      - MYSQL_DATABASE=misp
+      - MYSQL_USER=misp
+      - MYSQL_PASSWORD=misp_db_password
+      - MISP_ADMIN_EMAIL=${MISP_ADMIN_EMAIL:-admin@siem.local}
+      - MISP_ADMIN_PASSPHRASE=${MISP_ADMIN_PASSPHRASE:-MISPAdmin!2025}
+      - MISP_BASEURL=${MISP_BASE_URL:-https://localhost/misp}
+      - REDIS_FQDN=misp-redis
+      - TIMEZONE=America/Chicago
+    volumes:
+      - misp-data:/var/www/MISP
+      - misp-gpg:/var/www/MISP/.gnupg
+    ports:
+      - "8443:443"
+      - "8080:80"
+    networks:
+      - siem-net
+
+volumes:
+  cassandra-data:
+  thehive-es-data:
+  thehive-data:
+  misp-db-data:
+  misp-data:
+  misp-gpg:
+
+
+networks:
+  siem-net:
+    external: true

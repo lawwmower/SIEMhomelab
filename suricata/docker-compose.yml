@@ -1,0 +1,38 @@
+# ============================================================================
+# Suricata IDS — Network Intrusion Detection
+# ============================================================================
+# Runs in host network mode for full packet capture on enp2s0.
+# Outputs eve.json to a shared volume readable by Wazuh Manager.
+# ============================================================================
+
+services:
+  suricata:
+    image: jasonish/suricata:latest
+    container_name: suricata
+    hostname: suricata
+    restart: unless-stopped
+    network_mode: host
+    cap_add:
+      - NET_ADMIN
+      - NET_RAW
+      - SYS_NICE
+    volumes:
+      - suricata-logs:/var/log/suricata
+      - suricata-rules:/var/lib/suricata
+      - suricata-run:/var/run/suricata
+      - ./config/suricata.yaml:/etc/suricata/suricata.yaml:ro
+    entrypoint: /usr/bin/suricata
+    command: >
+      -c /etc/suricata/suricata.yaml -i ${HOST_INTERFACE:-enp2s0} --set classification-file=/etc/suricata/classification.config --set reference-config-file=/etc/suricata/reference.config
+
+volumes:
+  suricata-logs:
+    external: true
+    name: suricata-logs
+  suricata-rules:
+  suricata-run:
+
+
+networks:
+  siem-net:
+    external: true

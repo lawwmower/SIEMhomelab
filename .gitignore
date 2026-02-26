@@ -1,0 +1,8 @@
+# Secrets — NEVER commit these
+.env
+
+# Generated TLS certificates
+nginx/certs/
+
+# Docker volumes / runtime data
+*.log

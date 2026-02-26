@@ -1,0 +1,44 @@
+# ============================================================================
+# Splunk Enterprise — SIEM Analytics & Correlation
+# ============================================================================
+# Free license: 500 MB/day ingestion. No license key required.
+# ============================================================================
+
+services:
+  splunk:
+    image: splunk/splunk:latest
+    container_name: splunk
+    hostname: splunk
+    restart: unless-stopped
+    environment:
+      - SPLUNK_START_ARGS=${SPLUNK_START_ARGS:---accept-license}
+      - SPLUNK_PASSWORD=${SPLUNK_PASSWORD:-SplunkAdmin!2025}
+      - SPLUNK_LICENSE_URI=Free
+      - SPLUNK_HEC_TOKEN=${SPLUNK_HEC_TOKEN:-a1b2c3d4-e5f6-7890-abcd-ef1234567890}
+    volumes:
+      - splunk-var:/opt/splunk/var
+      - splunk-etc:/opt/splunk/etc
+      - wazuh-alerts:/opt/splunk/wazuh-alerts:ro
+      - ./config/inputs.conf:/opt/splunk/etc/system/local/inputs.conf:ro
+    ports:
+      - "8000:8000" # Splunk Web UI
+      - "8088:8088" # HTTP Event Collector (HEC)
+      - "9997:9997" # Universal Forwarder receiving
+    networks:
+      - siem-net
+    healthcheck:
+      test: [ "CMD-SHELL", "curl -sk https://localhost:8089/services/server/health/splunkd/details | grep -q '\"status\":\"green\"' || curl -sk https://localhost:8089/services/server/info | grep -q 'server_roles'" ]
+      interval: 30s
+      timeout: 10s
+      retries: 15
+      start_period: 120s
+
+volumes:
+  splunk-var:
+  splunk-etc:
+  wazuh-alerts:
+    external: true
+
+networks:
+  siem-net:
+    external: true

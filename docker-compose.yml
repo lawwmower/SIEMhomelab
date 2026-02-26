@@ -1,0 +1,31 @@
+# ============================================================================
+# SIEM Homelab — Master Docker Compose
+# ============================================================================
+# Orchestrates all sub-stacks on a shared network.
+# Usage:  docker compose up -d
+#         docker compose down
+# ============================================================================
+
+include:
+  - path: ./wazuh/docker-compose.yml
+  - path: ./splunk/docker-compose.yml
+  - path: ./suricata/docker-compose.yml
+  - path: ./thehive/docker-compose.yml
+  - path: ./nginx/docker-compose.yml
+
+networks:
+  siem-net:
+    name: ${SIEM_NETWORK:-siem-net}
+    driver: bridge
+    ipam:
+      config:
+        - subnet: 172.25.0.0/16
+
+volumes:
+  # Shared volume for Suricata logs → Wazuh Manager
+  suricata-logs:
+    name: suricata-logs
+
+  # Shared volume for Wazuh alerts → Splunk
+  wazuh-alerts:
+    name: wazuh-alerts
