@@ -1,6 +1,7 @@
 # 🛡️ SIEM Homelab
 
-A production-ready, Docker-based Security Information & Event Management stack for your Ubuntu homelab.
+A production-ready, Docker-based Security Information & Event Management stack for my Ubuntu homelab.
+READme written with GenAI.
 
 ## Architecture
 
